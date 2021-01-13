@@ -9,6 +9,12 @@
 const off_t bbai_gpio_ports[] = { 0x4AE10000, 0x48055000, 0x48057000, 0x48059000, 0x4805B000, 0x4805D000, 0x48051000, 0x48053000 };
 const off_t bbb_gpio_ports[] = { 0x44E07000, 0x4804C000, 0x481AC000, 0x481AE000 };
 
+typedef enum {
+  UNKNOWN,
+  INPUT,
+  OUTPUT
+} bb_gpio_direction_t;
+
 typedef struct {
   uint16_t header_pin; // 8XX or 9xx for header P8.XX or P9.XX pins
   uint8_t port_num;    // GPIO port number 1-8 on the BBAI, 1-4 on the BBB
@@ -100,6 +106,7 @@ typedef struct bb_pin {
   hal_bit_t *invert;
 
   uint8_t line_num;
+  int inst_id;
 
   struct bb_pin *next;
 } bb_pin_t;
