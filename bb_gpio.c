@@ -27,6 +27,13 @@ MODULE_AUTHOR("John Allwine");
 MODULE_DESCRIPTION("Driver for GPIO pins on Beaglebone Boards using /dev/mem");
 MODULE_LICENSE("GPL");
 
+static bb_gpio_board_t board = 0;
+static const bb_header_pin_t *pin_map = NULL;
+static size_t pin_map_count = 0;
+
+static const off_t* port_addresses = NULL;
+static size_t port_addresses_count = 0;
+
 static const char *modname = "bb_gpio";
 static int comp_id;
 
@@ -40,15 +47,8 @@ RTAPI_IP_INT(pin, "pin");
 static char* direction;
 RTAPI_IP_STRING(direction, "direction of the GPIO (input or output)");
 
-static void read_input_pins(void *arg, long period) {
-}
-
-static void write_output_pins(void *arg, long period) {
-}
-
-bb_header_pin_t find_header_pin(uint16_t header_pin, const bb_header_pin_t *pin_map) {
-  const size_t num_pins = sizeof(bbai_pin_map)/sizeof(bb_header_pin_t);
-  for(size_t i = 0; i < num_pins; i++) {
+bb_header_pin_t find_header_pin(uint16_t header_pin) {
+  for(size_t i = 0; i < pin_map_count; i++) {
     if(pin_map[i].header_pin == header_pin) {
       return pin_map[i];
     }
@@ -60,7 +60,8 @@ bb_header_pin_t find_header_pin(uint16_t header_pin, const bb_header_pin_t *pin_
 bb_gpio_port_t *root_port = NULL;
 
 // finds a previously created port for the provided pin
-bb_gpio_port_t* find_port(bb_gpio_port_t *root, bb_header_pin_t pin, const off_t* port_addresses) {
+bb_gpio_port_t* find_port(bb_gpio_port_t *root, bb_header_pin_t pin) {
+//  rtapi_print_msg(RTAPI_MSG_ERR, "%s: finding port for pin %u %u %u\n", modname, pin.header_pin, pin.port_num, pin.port_num);
   bb_gpio_port_t *next = root;
   bb_gpio_port_t *port = NULL;
 
@@ -91,7 +92,7 @@ bb_gpio_direction_t check_pin_direction(bb_gpio_port_t *port, bb_header_pin_t pi
     next = next->next;
   }
 
-  return UNKNOWN;
+  return UNKNOWN_DIRECTION;
 }
 
 int create_pin(bb_gpio_port_t *port, bb_header_pin_t header_pin, bb_gpio_direction_t dir, const char* name) {
@@ -155,7 +156,6 @@ static void read_ports(void *arg, long period) {
   while(port != NULL) {
     if(port->input_pin) {
       uint32_t data = *(port->data);
-      rtapi_print_msg(RTAPI_MSG_ERR, "%s: %u\n", modname, data);
       bb_pin_t *pin = port->input_pin;
       while(pin != NULL) {
         *(pin->value) = ((data & (1 << pin->line_num)) >> pin->line_num) ^ *(pin->invert);
@@ -171,25 +171,23 @@ static int instantiate_bb_gpio(const int argc, char* const *argv) {
 
   if(strcmp(instname, "init") == 0) {
   } else {
-    // TODO - choose proper pin_map and port_addresses based on detected or specified device
-    const bb_header_pin_t *pin_map = bbai_pin_map;
-    const off_t *port_addresses = bbai_gpio_ports;
-
-    const bb_header_pin_t instpin = find_header_pin((uint16_t)pin, pin_map);
+    const bb_header_pin_t instpin = find_header_pin((uint16_t)pin);
     if(instpin.header_pin == -1) {
       rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: unknown pin %d.\n", modname, pin);
     }
 
-    bb_gpio_port_t *port = find_port(root_port, instpin, port_addresses);
+    bb_gpio_port_t *port = find_port(root_port, instpin);
     if(port == NULL) {
+//      rtapi_print_msg(RTAPI_MSG_ERR, "%s: didn't find port, creating one...\n", modname);
       port = hal_malloc(sizeof(bb_gpio_port_t));
+      port->port_num = instpin.port_num;
       if(port == 0) {
         rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: hal_malloc() failed\n", modname);
         return -1;
       }
 
       int fd = open("/dev/mem", O_RDWR);
-      port->addr = mmap(0, GPIO_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, port_addresses[instpin.port_num-1]);
+      port->addr = mmap(0, GPIO_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, port_addresses[instpin.port_num]);
       close(fd);
       if(port->addr < 0) {
         rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: mmap failed\n", modname);
@@ -199,9 +197,7 @@ static int instantiate_bb_gpio(const int argc, char* const *argv) {
       port->set = port->addr + GPIO_SET_OFFSET;
       port->clr = port->addr + GPIO_CLR_OFFSET;
       port->data = port->addr + GPIO_DATA_OFFSET;
-      if(root_port != NULL) {
-        port->next = root_port->next;
-      }
+      port->next = root_port;
       root_port = port;
     }
 
@@ -217,7 +213,7 @@ static int instantiate_bb_gpio(const int argc, char* const *argv) {
     }
 
     bb_gpio_direction_t existing_dir = check_pin_direction(port, instpin);
-    if(existing_dir == UNKNOWN) {
+    if(existing_dir == UNKNOWN_DIRECTION) {
       int inst_id = create_pin(port, instpin, dir, instname);
     } else {
       rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: pin already created as %s\n", modname, existing_dir == INPUT ? "input" : "output");
@@ -233,6 +229,35 @@ int rtapi_app_main(void) {
   if(comp_id < 0) {
     rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: hal_init() failed\n", modname);
     return -1;
+  }
+
+  const char* boardFile = "/proc/device-tree/model";
+  FILE *fd;
+  char line[100];
+
+  fd = fopen(boardFile, "r");
+  if(fd == NULL) {
+    rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: cannot read /proc/device-tree/model to determine board\n", modname);
+    hal_exit(comp_id);
+    return -1;
+  }
+
+  while(fgets(line, sizeof(line), fd)) {
+    if(strstr(line, "BeagleBone AI") != NULL) {
+      board = BBAI;
+      pin_map = bbai_pin_map;
+      pin_map_count = sizeof(bbai_pin_map)/sizeof(bb_header_pin_t);
+      port_addresses = bbai_gpio_ports;
+      port_addresses_count = sizeof(bbai_gpio_ports)/sizeof(off_t);
+      break;
+    } else if(strstr(line, "BeagleBone Black") != NULL) {
+      board = BBB;
+      pin_map = bbb_pin_map;
+      pin_map_count = sizeof(bbb_pin_map)/sizeof(bb_header_pin_t);
+      port_addresses = bbb_gpio_ports;
+      port_addresses_count = sizeof(bbb_gpio_ports)/sizeof(off_t);
+      break;
+    }
   }
 
   if(hal_export_funct("bb_gpio.read", read_ports, NULL, 0, 0, comp_id) < 0) {
