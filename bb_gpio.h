@@ -1,6 +1,8 @@
 #ifndef __BB_GPIO_H__
 #define __BB_GPIO_H__
 
+#include <gpiod.h>
+
 #define GPIO_SIZE 0x2000
 #define GPIO_SET_OFFSET 0x194
 #define GPIO_CLR_OFFSET 0x190
@@ -184,6 +186,8 @@ typedef struct bb_pin {
   uint8_t line_num;
   int inst_id;
 
+  struct gpiod_line *line;
+
   struct bb_pin *next;
 } bb_pin_t;
 
@@ -195,6 +199,8 @@ typedef struct bb_gpio_port {
   volatile uint32_t *data; // data register reads the state of input pins
 
   uint8_t port_num;    // GPIO port number 1-8 on the BBAI, 1-4 on the BBB
+
+  struct gpiod_chip *chip;
 
   bb_pin_t *input_pin;
   bb_pin_t *output_pin;
