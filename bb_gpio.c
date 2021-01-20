@@ -41,8 +41,14 @@ static int comp_id;
 //static char *board;
 //RTAPI_MP_STRING(board, "BBB, BBAI, OTHER (default)");
 
-static int pin;
+static int pin = -1;
 RTAPI_IP_INT(pin, "pin");
+
+static int port = -1;
+RTAPI_IP_INT(port, "port");
+
+static int line = -1;
+RTAPI_IP_INT(line, "line");
 
 static char* direction;
 RTAPI_IP_STRING(direction, "direction of the GPIO (input or output)");
@@ -61,7 +67,7 @@ bb_gpio_port_t *root_port = NULL;
 
 // finds a previously created port for the provided pin
 bb_gpio_port_t* find_port(bb_gpio_port_t *root, bb_header_pin_t pin) {
-//  rtapi_print_msg(RTAPI_MSG_ERR, "%s: finding port for pin %u %u %u\n", modname, pin.header_pin, pin.port_num, pin.port_num);
+//  rtapi_print_msg(RTAPI_MSG_ERR, "%s: finding port for pin %d %d %d\n", modname, pin.header_pin, pin.port_num, pin.port_num);
   bb_gpio_port_t *next = root;
   bb_gpio_port_t *port = NULL;
 
@@ -179,6 +185,12 @@ static void read_ports(void *arg, long period) {
   }
 };
 
+static void reset_args() {
+  pin = -1;
+  port = -1;
+  line = -1;
+}
+
 #define MAX_PATH_LENGTH 20
 static int instantiate_bb_gpio(const int argc, char* const *argv) {
   char path[MAX_PATH_LENGTH];
@@ -186,9 +198,16 @@ static int instantiate_bb_gpio(const int argc, char* const *argv) {
 
   if(strcmp(instname, "init") == 0) {
   } else {
-    const bb_header_pin_t instpin = find_header_pin((uint16_t)pin);
+    bb_header_pin_t instpin = find_header_pin((uint16_t)pin);
     if(instpin.header_pin == -1) {
-      rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: unknown pin %d.\n", modname, pin);
+      if(port != -1 && line != -1) {
+        instpin.port_num = port;
+        instpin.line_num = line;
+      } else {
+        rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: unknown pin %d, %d, %d.\n", modname, pin, port, line);
+        reset_args();
+        return -1;
+      }
     }
 
     bb_gpio_port_t *port = find_port(root_port, instpin);
@@ -200,6 +219,7 @@ static int instantiate_bb_gpio(const int argc, char* const *argv) {
       port->chip = gpiod_chip_open(path);
       if(port == 0) {
         rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: hal_malloc() failed\n", modname);
+        reset_args();
         return -1;
       }
 
@@ -208,6 +228,7 @@ static int instantiate_bb_gpio(const int argc, char* const *argv) {
       close(fd);
       if(port->addr < 0) {
         rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: mmap failed\n", modname);
+        reset_args();
         return -1;
       }
 
@@ -226,6 +247,7 @@ static int instantiate_bb_gpio(const int argc, char* const *argv) {
       dir = INPUT;
     } else {
       rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: unknown direction %s\n", modname, direction);
+      reset_args();
       return -1;
     }
 
@@ -234,9 +256,11 @@ static int instantiate_bb_gpio(const int argc, char* const *argv) {
       int inst_id = create_pin(port, instpin, dir, instname);
     } else {
       rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: pin already created as %s\n", modname, existing_dir == INPUT ? "input" : "output");
+      reset_args();
       return -1;
     }
   }
+  reset_args();
   return 0;
 }
            

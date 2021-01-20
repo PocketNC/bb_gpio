@@ -24,15 +24,15 @@ typedef enum {
 } bb_gpio_direction_t;
 
 typedef struct {
-  uint16_t header_pin; // 8XX or 9xx for header P8.XX or P9.XX pins
-  uint8_t port_num;    // GPIO port number 1-8 on the BBAI, 1-4 on the BBB
-  uint8_t line_num;    // Line number of the pin (represents which bit controls the pin in the clear and set registers), 0-31
+  int16_t header_pin; // 8XX or 9xx for header P8.XX or P9.XX pins
+  int8_t port_num;    // GPIO port number 0-7 on the BBAI, 0-3 on the BBB
+  int8_t line_num;    // Line number of the pin (represents which bit controls the pin in the clear and set registers), 0-31
 } bb_header_pin_t;
 
 const bb_header_pin_t UNKNOWN_PIN = { -1, -1, -1 };
 
 // From https://github.com/beagleboard/beaglebone-ai/wiki/System-Reference-Manual#expansion-connectors
-// Mode 14 in each of the tables for groups of pins (will list gpio<PORT>_<LINE>)
+// Mode 14 in each of the tables for groups of pins (will list gpio<PORT+1>_<LINE>)
 // If multiple ports are connected to the same header pin, A will be the default unless there is only a B (listed as 2nd in the link above).
 // To differentiate them, an extra 1 can be used to specifically choose A and an extra 2 will choose B.
 // Examples:
@@ -197,8 +197,8 @@ typedef struct bb_gpio_port {
   volatile uint32_t *set;  // set data register sets output pins high
   volatile uint32_t *clr;  // clr data register sets output pins low
   volatile uint32_t *data; // data register reads the state of input pins
-
-  uint8_t port_num;    // GPIO port number 1-8 on the BBAI, 1-4 on the BBB
+  
+  uint8_t port_num;    // GPIO port number 0-7 on the BBAI, 0-3 on the BBB
 
   struct gpiod_chip *chip;
 
