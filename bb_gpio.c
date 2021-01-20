@@ -162,6 +162,14 @@ static void write_ports(void *arg, long period) {
       } else {
         clrData |= 1 << pin->line_num;
       }
+      
+      // This is how to do it with libgpiod, but the write would be per pin
+      // rather than per port. This makes a significant different to performance
+      // especially when manipulating multiple pins. Perhaps a refactor could
+      // leverage libgpiod's bulk API to make it more cross platform with comparable
+      // performance.
+      //gpiod_line_set_value(pin->line, *(pin->value) ^ *(pin->invert));
+
       pin = pin->next;
     }
     *(port->set) = setData;
@@ -178,6 +186,13 @@ static void read_ports(void *arg, long period) {
       bb_pin_t *pin = port->input_pin;
       while(pin != NULL) {
         *(pin->value) = ((data & (1 << pin->line_num)) >> pin->line_num) ^ *(pin->invert);
+
+        // This is the how to do it with libgpiod, but requires a read per pin
+        // rather than per port, which has significant impact on performance. 
+        // Perhaps a refactor could leverage libgpiod's bulk API to make it 
+        // more cross platform with comparable performance.
+        //*(pin->value) = gpiod_line_get_value(pin->line) ^ *(pin->invert);
+
         pin = pin->next;
       }
     }
