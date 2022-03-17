@@ -306,7 +306,8 @@ int rtapi_app_main(void) {
       port_addresses = bbai_gpio_ports;
       port_addresses_count = sizeof(bbai_gpio_ports)/sizeof(off_t);
       break;
-    } else if(strstr(line, "BeagleBone Black") != NULL) {
+    } else if(strstr(line, "BeagleBone Black") != NULL ||
+              strstr(line, "BeagleBone Green") != NULL) {
       board = BBB;
       pin_map = bbb_pin_map;
       pin_map_count = sizeof(bbb_pin_map)/sizeof(bb_header_pin_t);
