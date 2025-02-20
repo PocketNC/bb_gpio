@@ -111,7 +111,6 @@ int create_pin(bb_gpio_port_t *port, bb_header_pin_t header_pin, bb_gpio_directi
   }
   pin->inst_id = inst_id;
   pin->line_num = header_pin.line_num;
-  pin->line = gpiod_chip_get_line(port->chip, header_pin.line_num);
 
   if(hal_pin_bit_newf(HAL_IN, &(pin->invert), inst_id, "%s.invert", name) < 0) {
     hal_exit(comp_id);
@@ -119,12 +118,6 @@ int create_pin(bb_gpio_port_t *port, bb_header_pin_t header_pin, bb_gpio_directi
   }
 
   if(dir == INPUT) {
-    int rv = gpiod_line_request_input(pin->line, "bb_gpio");
-    if(rv) {
-      // TODO - clean up gpiod ports
-      hal_exit(comp_id);
-      return -1;
-    }
     if(hal_pin_bit_newf(HAL_OUT, &(pin->value), inst_id, "%s.in", name) < 0) {
       hal_exit(comp_id);
       return -1;
@@ -132,12 +125,6 @@ int create_pin(bb_gpio_port_t *port, bb_header_pin_t header_pin, bb_gpio_directi
     pin->next = port->input_pin;
     port->input_pin = pin;
   } else {
-    int rv = gpiod_line_request_output(pin->line, "bb_gpio", 0);
-    if(rv) {
-      // TODO - clean up gpiod ports
-      hal_exit(comp_id);
-      return -1;
-    }
     if(hal_pin_bit_newf(HAL_IN, &(pin->value), inst_id, "%s.out", name) < 0) {
       hal_exit(comp_id);
       return -1;
@@ -163,13 +150,6 @@ static void write_ports(void *arg, long period) {
         clrData |= 1 << pin->line_num;
       }
       
-      // This is how to do it with libgpiod, but the write would be per pin
-      // rather than per port. This makes a significant different to performance
-      // especially when manipulating multiple pins. Perhaps a refactor could
-      // leverage libgpiod's bulk API to make it more cross platform with comparable
-      // performance.
-      //gpiod_line_set_value(pin->line, *(pin->value) ^ *(pin->invert));
-
       pin = pin->next;
     }
     *(port->set) = setData;
@@ -186,12 +166,6 @@ static void read_ports(void *arg, long period) {
       bb_pin_t *pin = port->input_pin;
       while(pin != NULL) {
         *(pin->value) = ((data & (1 << pin->line_num)) >> pin->line_num) ^ *(pin->invert);
-
-        // This is the how to do it with libgpiod, but requires a read per pin
-        // rather than per port, which has significant impact on performance. 
-        // Perhaps a refactor could leverage libgpiod's bulk API to make it 
-        // more cross platform with comparable performance.
-        //*(pin->value) = gpiod_line_get_value(pin->line) ^ *(pin->invert);
 
         pin = pin->next;
       }
@@ -230,13 +204,6 @@ static int instantiate_bb_gpio(const int argc, char* const *argv) {
 //      rtapi_print_msg(RTAPI_MSG_ERR, "%s: didn't find port, creating one...\n", modname);
       port = hal_malloc(sizeof(bb_gpio_port_t));
       port->port_num = instpin.port_num;
-      rtapi_snprintf(path, MAX_PATH_LENGTH, "/dev/gpiochip%d", instpin.port_num);
-      port->chip = gpiod_chip_open(path);
-      if(port == 0) {
-        rtapi_print_msg(RTAPI_MSG_ERR, "%s: ERROR: hal_malloc() failed\n", modname);
-        reset_args();
-        return -1;
-      }
 
       int fd = open("/dev/mem", O_RDWR);
       port->addr = mmap(0, GPIO_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, port_addresses[instpin.port_num]);

@@ -18,14 +18,10 @@ where they are needed rather than all at once.
 Usage
 =====
 
-Install dependencies:
-
-    sudo apt-get install libgpiod-dev
-
 To install use instcomp (may be integrated into machinekit-hal eventually):
 
     # from the bb_gpio directory
-    sudo EXTRA_LDFLAGS="-lgpiod" instcomp --install bb_gpio.c
+    sudo instcomp --install bb_gpio.c
 
 Here's an example HAL file that could be used with an LED wired to P8.17 and
 a button wired up to short GND to P8.14 (P8.14 configured to be an input pull up).
